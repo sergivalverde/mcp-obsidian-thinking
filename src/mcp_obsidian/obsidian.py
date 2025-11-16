@@ -945,9 +945,10 @@ tags: [daily-progress, research-planning]
         """Check if a file exists in the vault.
         
         Uses caching to avoid repeated API calls.
+        First tries the exact path, then searches by filename if that fails.
         
         Args:
-            filepath: Path to check
+            filepath: Path to check (can be full path or just filename)
             
         Returns:
             True if file exists, False otherwise
@@ -956,14 +957,32 @@ tags: [daily-progress, research-planning]
         if filepath in self._file_existence_cache:
             return self._file_existence_cache[filepath]
         
-        # Try to get file contents
+        # Try to get file contents with exact path
         try:
             self.get_file_contents(filepath)
             self._file_existence_cache[filepath] = True
             return True
         except:
-            self._file_existence_cache[filepath] = False
-            return False
+            pass
+        
+        # If direct path fails and this looks like just a filename (no path separators),
+        # try searching for it in the vault
+        if '/' not in filepath:
+            try:
+                # Search for the filename
+                # Add .md if not present for search
+                search_name = filepath if filepath.endswith('.md') else filepath
+                results = self.search(search_name, context_length=0)
+                
+                # Check if we got any results
+                if results and len(results) > 0:
+                    self._file_existence_cache[filepath] = True
+                    return True
+            except:
+                pass
+        
+        self._file_existence_cache[filepath] = False
+        return False
     
     def _is_in_code_block(self, content: str, position: int) -> bool:
         """Check if a position in content is inside a code block.
@@ -1182,15 +1201,19 @@ tags: [daily-progress, research-planning]
         potential_paths.extend(re.findall(r'"([^"]+\.md)"', content))
         potential_paths.extend(re.findall(r"'([^']+\.md)'", content))
         
-        # Pattern 2: Contextual mentions (after keywords)
+        # Pattern 2: Paths in backticks (code formatting)
+        backtick_paths = re.findall(r'`([^`]+\.md)`', content)
+        potential_paths.extend(backtick_paths)
+        
+        # Pattern 3: Contextual mentions (after keywords like "Location:", "from", etc.)
         contextual = re.findall(
-            r'(?:from|in|see|based on|according to|source:|reference:)\s+([A-Za-z0-9_\-\s/]+\.md)',
+            r'(?:from|in|see|based on|according to|source:|reference:|location:)\s+[`"]?([A-Za-z0-9_\-\s/,\(\)]+\.md)[`"]?',
             content,
             re.IGNORECASE
         )
         potential_paths.extend(contextual)
         
-        # Pattern 3: Standalone file paths with folder structure
+        # Pattern 4: Standalone file paths with folder structure
         standalone = re.findall(r'\b([A-Za-z0-9_\-\s/]+/[A-Za-z0-9_\-\s/]+\.md)\b', content)
         potential_paths.extend(standalone)
         
@@ -1217,17 +1240,20 @@ tags: [daily-progress, research-planning]
                 
                 # Replace the path with wiki-link
                 # Use word boundaries and negative lookbehind/lookahead to avoid replacing inside quotes initially
-                # But do replace quoted paths
+                # But do replace quoted paths and backtick paths
                 escaped_path = re.escape(path)
                 
-                # Replace quoted versions first
+                # Replace backtick versions first (most specific)
+                content = re.sub(rf'`{escaped_path}`', wiki_link, content)
+                
+                # Replace quoted versions
                 content = re.sub(rf'"{escaped_path}"', wiki_link, content)
                 content = re.sub(rf"'{escaped_path}'", wiki_link, content)
                 
                 # Then replace unquoted standalone mentions
                 # Avoid replacing if it's already part of a wiki-link
                 content = re.sub(
-                    rf'(?<!\[\[)(?<!")(?<!\')(?<!\w){escaped_path}(?!\]\])(?!")(?!\')(?!\w)',
+                    rf'(?<!\[\[)(?<!")(?<!\')(?<!`)(?<!\w){escaped_path}(?!\]\])(?!")(?!\')(?!`)(?!\w)',
                     wiki_link,
                     content
                 )

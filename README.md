@@ -43,6 +43,16 @@ The server implements multiple tools to interact with Obsidian:
 
 **Project Management:**
 - obsidian_create_project: Create project folders with standardized structure (research_project template includes Chats/, Research/, Daily Progress/ subfolders)
+- obsidian_create_daily_progress: Create daily progress notes with format `daily_progress_YYYY_MM_DD.md` in a project's Daily Progress folder
+
+**Automatic Features:**
+- **Automatic Internal Linking**: When writing content, file path mentions are automatically converted to Obsidian wiki-links (e.g., `Research/article.md` becomes `[[article]]`)
+- **Backtick File Path Conversion**: File paths in backticks (like `` `Shane Parrish - Article.md` ``) are automatically converted to wiki-links if the file exists anywhere in your vault
+- **Smart Filename Search**: When checking if a file exists, searches the entire vault by filename - works even if Claude references `article.md` but the file is actually in `Clippings/article.md`
+- **Frontmatter Instruction Injection**: When reading files, frontmatter instructions (like `mode: thinking`) are automatically highlighted and enforced
+- **Smart Link Normalization**: Wiki-links to EXISTING files are automatically normalized to clean filename-only format (`[[filename]]`), removing relative paths like `../../` and full paths. Works even if Claude writes `[[../../path/to/file]]` - it gets auto-corrected to `[[file]]` (only if the file exists)
+- **Frontmatter Link Normalization**: Wiki-links in frontmatter YAML (category, related, etc.) are automatically normalized just like content links. Preserves display text in links like `[[file|Display Text]]`
+- **No False Positives**: Links to non-existent files are NEVER normalized or created. If you write `[[Blue Ocean Strategy]]` and that file doesn't exist, it stays exactly as-is. This prevents false positive links in your vault.
 
 ### Example prompts
 
@@ -83,6 +93,49 @@ instructions: |
 ---
 ```
 
+### 🚨 How Thinking Mode Actually Works
+
+**The MCP server automatically injects frontmatter instructions into every file read!**
+
+When Claude reads a file using `obsidian_get_file_contents` or `obsidian_batch_get_file_contents`, the server:
+
+1. **Extracts** the frontmatter from the file
+2. **Checks** for behavioral instructions (`mode`, `instructions`, `ai_instructions`, `behavior`)
+3. **Injects** a prominent warning banner at the top of the response
+4. **Highlights** critical directives like "THINKING MODE" and "DO NOT CREATE CONTENT"
+
+**What Claude sees when reading a file with `mode: thinking`:**
+
+```
+================================================================================
+⚠️  CRITICAL: FRONTMATTER INSTRUCTIONS DETECTED
+================================================================================
+
+🎯 MODE: THINKING
+
+⚠️  YOU ARE IN THINKING MODE - DO NOT CREATE CONTENT!
+Your role: Ask questions, explore ideas, organize research.
+NOT your role: Write drafts, create outlines, generate artifacts.
+
+📋 INSTRUCTIONS:
+[Your full instructions from frontmatter here]
+
+📊 STAGE: exploration
+📌 STATUS: active
+
+================================================================================
+END OF INSTRUCTIONS - FOLLOW THEM STRICTLY
+================================================================================
+
+[Then the actual file content follows...]
+```
+
+This means:
+- ✅ **No manual reminders needed** - Instructions are automatically surfaced
+- ✅ **Impossible to miss** - Prominent warning banners with emojis
+- ✅ **Always enforced** - Every file read includes the instructions
+- ✅ **Context-aware** - Different modes get different warnings
+
 ### Setting Up a Research Project
 
 Create a new project with the standardized structure:
@@ -90,18 +143,27 @@ Create a new project with the standardized structure:
 ```
 Use obsidian_create_project tool:
 {
-  "base_path": "Projects/My Research Topic",
+  "base_path": "My Research Topic",
   "template": "research_project"
 }
 ```
 
 This creates:
-- `Projects/My Research Topic/`
-  - `index.md` (main project file with frontmatter)
-  - `Chats/` (saved conversations with AI)
-  - `Research/` (articles, PDFs, notes)
-  - `Daily Progress/` (daily summaries and learnings)
-  - `README.md` (project overview)
+- `Projects/My Research Topic/` folder
+- `index.md` with thinking mode frontmatter and basic structure sections
+- Empty `README.md` for you to populate
+- Folder structure: `Chats/`, `Research/`, `Daily Progress/`
+
+**What's Pre-filled:**
+- `index.md` includes critical thinking mode instructions in frontmatter
+- Basic structure sections (Overview, Key Questions, Resources, Next Steps)
+- This ensures the AI always enters thinking mode for your project
+
+**What's Empty:**
+- `README.md` - for you to add project overview/documentation as needed
+- All subfolders start empty
+
+**Note:** Projects are automatically created inside the `Projects/` folder. You can just provide the project name (e.g., "My Research Topic") and it will be created at `Projects/My Research Topic/`. If you explicitly include "Projects/" in the path, it won't be doubled.
 
 ### Key Workflow Patterns
 
@@ -140,7 +202,49 @@ Use obsidian_tags tool:
 }
 ```
 
-#### 3. Daily Progress Summaries
+#### 3. Creating Daily Progress Notes
+
+**Prompt:** "Create a daily progress note for today"
+
+This uses `obsidian_create_daily_progress` to create a structured note:
+
+```json
+{
+  "project_path": "My Research Topic"
+}
+```
+
+Creates: `Projects/My Research Topic/Daily Progress/daily_progress_2025_11_16.md`
+
+The note includes:
+- Frontmatter with date (as wiki-link: `[[YYYY-MM-DD]]`), type, project (as wiki-link), and tags in inline format
+- Heading with linked date for easy navigation
+- Sections for: What I Learned, Key Insights, Questions & Challenges, Next Steps, Resources Referenced
+
+**Example generated content:**
+```yaml
+---
+date: [[2025-11-16]]
+type: daily_progress
+project: "[[My Research]]"
+tags: [daily-progress, research-planning]
+---
+
+# Daily Progress - [[2025-11-16]]
+
+## What I Learned Today
+...
+```
+
+**For a specific date:**
+```json
+{
+  "project_path": "My Research Topic",
+  "date": "2025-11-15"
+}
+```
+
+#### 4. Daily Progress Summaries
 
 At the end of each work session, have the AI create a summary:
 
@@ -227,9 +331,9 @@ instructions: |
 This workflow is ideal for long-form research projects (talks, papers, consulting projects):
 
 **Phase 1: Setup**
-1. Create project structure with `obsidian_create_project`
-2. Add frontmatter to index.md with project metadata and AI instructions
-3. Initialize with key questions and goals
+1. Create project structure with `obsidian_create_project` (automatically includes thinking mode frontmatter)
+2. Review and customize the index.md structure sections as needed
+3. Start working - thinking mode is already configured
 
 **Phase 2: Research Collection**
 1. Save articles, conversations, and notes to Research/ folder
@@ -396,6 +500,79 @@ Use date queries to find stale projects:
 ```
 
 Any project not touched in 90 days is a candidate for archiving.
+
+## Frontmatter Link Normalization
+
+The MCP automatically normalizes ALL wiki-links in both frontmatter and content when writing files. This ensures clean, consistent links throughout your vault.
+
+### What Gets Normalized
+
+**In Frontmatter:**
+```yaml
+# Before (problematic)
+---
+category: "[[../index|Red Ocean New Entrants]]"
+related: "[[../../Research/mental_models.md]]"
+tags:
+  - daily-progress
+  - research-planning
+date: 2025-11-16
+---
+
+# After (normalized)
+---
+category: "[[index|Red Ocean New Entrants]]"
+related: "[[mental_models]]"
+tags: [daily-progress, research-planning]
+date: [[2025-11-16]]
+---
+```
+
+**In Content:**
+```markdown
+# Before
+This is based on [[../some/path/file.md]] and [[../../Research/article.md]].
+
+# After
+This is based on [[file]] and [[article]].
+```
+
+### How It Works
+
+1. **Checks file existence**: Only normalizes links to files that actually exist in your vault
+2. **Removes relative paths**: `../` and `./` are stripped
+3. **Extracts filename**: `path/to/file.md` becomes `file`
+4. **Removes .md extension**: Obsidian convention
+5. **Preserves display text**: `[[file|Display Text]]` stays intact
+6. **Works everywhere**: Frontmatter fields, list items, content body
+7. **No false positives**: Links to non-existent files remain unchanged
+
+### Benefits
+
+- **No false positives**: Only links to existing files are normalized - prevents broken links
+- **Consistent links**: No more `[[../../path]]` vs `[[path]]` confusion
+- **Vault portability**: Links work regardless of folder structure
+- **Obsidian native**: Matches how Obsidian resolves links internally
+- **Automatic**: Happens transparently when writing content
+- **Safe**: Display text and link semantics are preserved
+- **Clean reading lists**: Book/article titles that don't exist as files stay as plain text, not broken links
+
+### Example: Daily Progress Notes
+
+When you create a daily progress note, the template automatically uses wiki-links:
+
+```yaml
+---
+date: [[2025-11-16]]
+type: daily_progress
+project: "[[My Research]]"
+tags: [daily-progress, research-planning]
+---
+
+# Daily Progress - [[2025-11-16]]
+```
+
+All dates and project names are clickable wiki-links that work with Obsidian's graph view, backlinks, and navigation.
 
 ## Configuration
 
