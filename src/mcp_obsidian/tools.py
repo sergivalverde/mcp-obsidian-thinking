@@ -180,7 +180,6 @@ class GetFileContentsToolHandler(ToolHandler):
             if instruction_header:
                 # Combine instructions with content
                 formatted_output = instruction_header + "\n\n" + content
-                
                 return [
                     TextContent(
                         type="text",

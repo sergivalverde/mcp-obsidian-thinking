@@ -789,7 +789,7 @@ SORT file.mtime DESC
             "research_project": {
                 "folders": ["Chats", "Research", "Daily Progress"],
                 "files": {
-                    "README.md": f"# {base_path}\n\nProject created on {datetime.now().strftime('%Y-%m-%d')}\n",
+                    "README.md": "",
                     "index.md": f"""---
 project: {base_path}
 status: active
@@ -894,7 +894,8 @@ instructions: |
         content = f"""---
 date: [[{date}]]
 type: daily_progress
-project: {project_path}
+project: "[[{project_path.split('/')[-1]}]]"
+tags: [daily-progress, research-planning]
 ---
 
 # Daily Progress - [[{date}]]
@@ -984,6 +985,80 @@ project: {project_path}
         # If odd number of markers, we're inside a code block
         return (triple_backticks % 2 == 1) or (single_backticks % 2 == 1)
     
+    def _normalize_frontmatter_links(self, frontmatter_text: str) -> str:
+        """Normalize wiki-links in frontmatter YAML.
+        
+        Removes relative paths (../, ./) and full paths from wiki-links in frontmatter,
+        leaving only the filename. Only normalizes links to files that actually exist.
+        
+        Args:
+            frontmatter_text: The YAML frontmatter text (without --- delimiters)
+            
+        Returns:
+            Normalized frontmatter text
+        """
+        def normalize_yaml_link(match):
+            original_link = match.group(0)
+            link_content = match.group(1)
+            
+            # Skip if it's a display text link like [[file|Display Text]]
+            if '|' in link_content:
+                parts = link_content.split('|', 1)
+                link_path = parts[0].strip()
+                display_text = parts[1].strip()
+                
+                # Normalize the link path part
+                # Remove ../ and ./ prefixes
+                normalized_path = re.sub(r'(?:\.\.\/|\.\/)+', '', link_path)
+                # Extract just filename
+                if '/' in normalized_path:
+                    normalized_path = normalized_path.split('/')[-1]
+                # Remove .md extension
+                if normalized_path.endswith('.md'):
+                    normalized_path = normalized_path[:-3]
+                
+                # Check if file exists (try both original path and normalized filename)
+                # First try the original path (in case it's a valid path)
+                original_path_clean = re.sub(r'(?:\.\.\/|\.\/)+', '', link_path)
+                if original_path_clean.endswith('.md'):
+                    original_path_clean = original_path_clean[:-3]
+                    
+                if (self._file_exists_in_vault(original_path_clean) or 
+                    self._file_exists_in_vault(original_path_clean + '.md') or
+                    self._file_exists_in_vault(normalized_path) or 
+                    self._file_exists_in_vault(normalized_path + '.md')):
+                    return f"[[{normalized_path}|{display_text}]]"
+                else:
+                    # File doesn't exist, return original link unchanged
+                    return original_link
+            else:
+                # Remove ../ and ./ prefixes
+                normalized_content = re.sub(r'(?:\.\.\/|\.\/)+', '', link_content)
+                # Extract just filename from path
+                if '/' in normalized_content:
+                    normalized_content = normalized_content.split('/')[-1]
+                # Remove .md extension if present
+                if normalized_content.endswith('.md'):
+                    normalized_content = normalized_content[:-3]
+                
+                # Check if file exists (try both original path and normalized filename)
+                # First try the original path (in case it's a valid path)
+                original_path_clean = re.sub(r'(?:\.\.\/|\.\/)+', '', link_content)
+                if original_path_clean.endswith('.md'):
+                    original_path_clean = original_path_clean[:-3]
+                    
+                if (self._file_exists_in_vault(original_path_clean) or 
+                    self._file_exists_in_vault(original_path_clean + '.md') or
+                    self._file_exists_in_vault(normalized_content) or 
+                    self._file_exists_in_vault(normalized_content + '.md')):
+                    return f"[[{normalized_content}]]"
+                else:
+                    # File doesn't exist, return original link unchanged
+                    return original_link
+        
+        # Normalize all wiki-links in frontmatter
+        return re.sub(r'\[\[([^\]]+)\]\]', normalize_yaml_link, frontmatter_text)
+    
     def _auto_link_content(self, content: str) -> str:
         """Automatically convert file path mentions to wiki-links.
         
@@ -995,16 +1070,48 @@ project: {project_path}
         And converts to: [[filename]]
         
         Also normalizes existing wiki-links to use clean filename format.
+        Processes both frontmatter and content body.
         
         Args:
-            content: Content to process
+            content: Content to process (including frontmatter if present)
             
         Returns:
-            Content with file paths converted to wiki-links
+            Content with file paths converted to wiki-links and frontmatter normalized
+        """
+        # Check if content has frontmatter
+        if content.startswith('---\n'):
+            # Split frontmatter from content
+            parts = content.split('---\n', 2)
+            if len(parts) >= 3:
+                # parts[0] is empty, parts[1] is frontmatter, parts[2] is content
+                frontmatter = parts[1]
+                body = parts[2]
+                
+                # Normalize frontmatter links
+                normalized_frontmatter = self._normalize_frontmatter_links(frontmatter)
+                
+                # Process body content (existing logic below)
+                processed_body = self._process_body_content(body)
+                
+                # Reassemble
+                return f"---\n{normalized_frontmatter}---\n{processed_body}"
+            
+        # No frontmatter, process as body content
+        return self._process_body_content(content)
+    
+    def _process_body_content(self, content: str) -> str:
+        """Process the body content (non-frontmatter) for auto-linking.
+        
+        Args:
+            content: Body content to process
+            
+        Returns:
+            Processed content with normalized links
         """
         # First, normalize any existing wiki-links that have paths
         # This handles cases where Claude or users write [[../../path/file]] or [[path/to/file]]
         def normalize_wiki_link(match):
+            original_link = match.group(0)
             link_content = match.group(1)
             
             # Skip if it's a display text link like [[file|Display Text]]
@@ -1015,26 +1122,50 @@ project: {project_path}
                 
                 # Normalize the link path part
                 # Remove ../ and ./ prefixes
-                link_path = re.sub(r'(?:\.\.\/|\.\/)+', '', link_path)
+                normalized_path = re.sub(r'(?:\.\.\/|\.\/)+', '', link_path)
                 # Extract just filename
-                if '/' in link_path:
-                    link_path = link_path.split('/')[-1]
+                if '/' in normalized_path:
+                    normalized_path = normalized_path.split('/')[-1]
                 # Remove .md extension
-                if link_path.endswith('.md'):
-                    link_path = link_path[:-3]
+                if normalized_path.endswith('.md'):
+                    normalized_path = normalized_path[:-3]
                 
-                return f"[[{link_path}|{display_text}]]"
+                # Check if file exists (try both original path and normalized filename)
+                original_path_clean = re.sub(r'(?:\.\.\/|\.\/)+', '', link_path)
+                if original_path_clean.endswith('.md'):
+                    original_path_clean = original_path_clean[:-3]
+                    
+                if (self._file_exists_in_vault(original_path_clean) or 
+                    self._file_exists_in_vault(original_path_clean + '.md') or
+                    self._file_exists_in_vault(normalized_path) or 
+                    self._file_exists_in_vault(normalized_path + '.md')):
+                    return f"[[{normalized_path}|{display_text}]]"
+                else:
+                    # File doesn't exist, return original link unchanged
+                    return original_link
             else:
                 # Remove ../ and ./ prefixes
-                link_content = re.sub(r'(?:\.\.\/|\.\/)+', '', link_content)
+                normalized_content = re.sub(r'(?:\.\.\/|\.\/)+', '', link_content)
                 # Extract just filename from path
-                if '/' in link_content:
-                    link_content = link_content.split('/')[-1]
+                if '/' in normalized_content:
+                    normalized_content = normalized_content.split('/')[-1]
                 # Remove .md extension if present
-                if link_content.endswith('.md'):
-                    link_content = link_content[:-3]
+                if normalized_content.endswith('.md'):
+                    normalized_content = normalized_content[:-3]
                 
-                return f"[[{link_content}]]"
+                # Check if file exists (try both original path and normalized filename)
+                original_path_clean = re.sub(r'(?:\.\.\/|\.\/)+', '', link_content)
+                if original_path_clean.endswith('.md'):
+                    original_path_clean = original_path_clean[:-3]
+                    
+                if (self._file_exists_in_vault(original_path_clean) or 
+                    self._file_exists_in_vault(original_path_clean + '.md') or
+                    self._file_exists_in_vault(normalized_content) or 
+                    self._file_exists_in_vault(normalized_content + '.md')):
+                    return f"[[{normalized_content}]]"
+                else:
+                    # File doesn't exist, return original link unchanged
+                    return original_link
         
         # Normalize all existing wiki-links
         content = re.sub(r'\[\[([^\]]+)\]\]', normalize_wiki_link, content)
