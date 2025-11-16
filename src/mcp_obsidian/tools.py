@@ -18,6 +18,58 @@ if api_key == "":
 TOOL_LIST_FILES_IN_VAULT = "obsidian_list_files_in_vault"
 TOOL_LIST_FILES_IN_DIR = "obsidian_list_files_in_dir"
 
+def _format_frontmatter_instructions(frontmatter: dict) -> str:
+    """Format frontmatter instructions as a prominent header.
+    
+    Args:
+        frontmatter: Dictionary of frontmatter fields
+        
+    Returns:
+        Formatted instruction header string, or empty string if no instructions
+    """
+    # Check for behavioral instructions in frontmatter
+    has_instructions = any(key in frontmatter for key in ['mode', 'instructions', 'ai_instructions', 'behavior'])
+    
+    if not has_instructions:
+        return ""
+    
+    # Build prominent instruction header
+    instruction_parts = []
+    instruction_parts.append("=" * 80)
+    instruction_parts.append("⚠️  CRITICAL: FRONTMATTER INSTRUCTIONS DETECTED")
+    instruction_parts.append("=" * 80)
+    
+    if 'mode' in frontmatter:
+        mode = frontmatter['mode']
+        instruction_parts.append(f"\n🎯 MODE: {mode.upper()}")
+        
+        if mode == 'thinking':
+            instruction_parts.append("\n⚠️  YOU ARE IN THINKING MODE - DO NOT CREATE CONTENT!")
+            instruction_parts.append("Your role: Ask questions, explore ideas, organize research.")
+            instruction_parts.append("NOT your role: Write drafts, create outlines, generate artifacts.")
+    
+    if 'instructions' in frontmatter:
+        instruction_parts.append(f"\n📋 INSTRUCTIONS:\n{frontmatter['instructions']}")
+    
+    if 'ai_instructions' in frontmatter:
+        instruction_parts.append(f"\n📋 AI INSTRUCTIONS:\n{frontmatter['ai_instructions']}")
+    
+    if 'behavior' in frontmatter:
+        instruction_parts.append(f"\n🤖 BEHAVIOR:\n{frontmatter['behavior']}")
+    
+    # Add other relevant frontmatter fields
+    if 'stage' in frontmatter:
+        instruction_parts.append(f"\n📊 STAGE: {frontmatter['stage']}")
+    
+    if 'status' in frontmatter:
+        instruction_parts.append(f"\n📌 STATUS: {frontmatter['status']}")
+    
+    instruction_parts.append("\n" + "=" * 80)
+    instruction_parts.append("END OF INSTRUCTIONS - FOLLOW THEM STRICTLY")
+    instruction_parts.append("=" * 80)
+    
+    return "\n".join(instruction_parts)
+
 class ToolHandler():
     def __init__(self, tool_name: str):
         self.name = tool_name
@@ -98,7 +150,7 @@ class GetFileContentsToolHandler(ToolHandler):
     def get_tool_description(self):
         return Tool(
             name=self.name,
-            description="Return the content of a single file in your vault.",
+            description="Return the content of a single file in your vault. IMPORTANT: If the file contains frontmatter with 'mode', 'instructions', or behavioral directives, these will be prominently displayed at the top of the response. You MUST follow these instructions strictly.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -119,11 +171,30 @@ class GetFileContentsToolHandler(ToolHandler):
         api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
 
         content = api.get_file_contents(args["filepath"])
+        
+        # Extract and highlight frontmatter instructions
+        try:
+            frontmatter = api.get_frontmatter(args["filepath"])
+            instruction_header = _format_frontmatter_instructions(frontmatter)
+            
+            if instruction_header:
+                # Combine instructions with content
+                formatted_output = instruction_header + "\n\n" + content
+                
+                return [
+                    TextContent(
+                        type="text",
+                        text=formatted_output
+                    )
+                ]
+        except:
+            # If frontmatter extraction fails, just return content
+            pass
 
         return [
             TextContent(
                 type="text",
-                text=json.dumps(content, indent=2)
+                text=content
             )
         ]
     
@@ -441,7 +512,7 @@ class BatchGetFileContentsToolHandler(ToolHandler):
     def get_tool_description(self):
         return Tool(
             name=self.name,
-            description="Return the contents of multiple files in your vault, concatenated with headers.",
+            description="Return the contents of multiple files in your vault, concatenated with headers. IMPORTANT: If any file contains frontmatter with 'mode', 'instructions', or behavioral directives, these will be prominently displayed for that file. You MUST follow these instructions strictly.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -464,12 +535,49 @@ class BatchGetFileContentsToolHandler(ToolHandler):
             raise RuntimeError("filepaths argument missing in arguments")
 
         api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-        content = api.get_batch_file_contents(args["filepaths"])
+        
+        # Process each file individually to extract frontmatter instructions
+        all_contents = []
+        for filepath in args["filepaths"]:
+            try:
+                content = api.get_file_contents(filepath)
+                
+                # Try to extract frontmatter instructions
+                try:
+                    frontmatter = api.get_frontmatter(filepath)
+                    instruction_header = _format_frontmatter_instructions(frontmatter)
+                    
+                    if instruction_header:
+                        # Add file header with instructions
+                        all_contents.append(f"\n{'=' * 80}")
+                        all_contents.append(f"FILE: {filepath}")
+                        all_contents.append('=' * 80)
+                        all_contents.append(instruction_header)
+                        all_contents.append(content)
+                    else:
+                        # Add file header without instructions
+                        all_contents.append(f"\n{'=' * 80}")
+                        all_contents.append(f"FILE: {filepath}")
+                        all_contents.append('=' * 80)
+                        all_contents.append(content)
+                except:
+                    # If frontmatter extraction fails, just add content with header
+                    all_contents.append(f"\n{'=' * 80}")
+                    all_contents.append(f"FILE: {filepath}")
+                    all_contents.append('=' * 80)
+                    all_contents.append(content)
+            except Exception as e:
+                all_contents.append(f"\n{'=' * 80}")
+                all_contents.append(f"FILE: {filepath}")
+                all_contents.append('=' * 80)
+                all_contents.append(f"Error reading file: {str(e)}")
+        
+        combined_content = "\n".join(all_contents)
 
         return [
             TextContent(
                 type="text",
-                text=content
+                text=combined_content
             )
         ]
 
