@@ -1147,13 +1147,13 @@ class FolderTemplateToolHandler(ToolHandler):
     def get_tool_description(self):
         return Tool(
             name=self.name,
-            description="Create a project folder with standardized structure. Templates: 'research_project' (creates Chats/, Research/, Daily Progress/ subfolders) or 'simple' (just index file).",
+            description="Create a project folder with standardized structure inside the Projects/ folder. Templates: 'research_project' (creates Chats/, Research/, Daily Progress/ subfolders) or 'simple' (just index file).",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "base_path": {
                         "type": "string",
-                        "description": "Base path for the project (e.g., 'Projects/My Research')"
+                        "description": "Project name or path. If it doesn't start with 'Projects/', it will be automatically prepended (e.g., 'My Research' becomes 'Projects/My Research')"
                     },
                     "template": {
                         "type": "string",
@@ -1172,8 +1172,13 @@ class FolderTemplateToolHandler(ToolHandler):
 
         api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
         
+        # Automatically prepend "Projects/" if not already present
+        base_path = args["base_path"]
+        if not base_path.startswith("Projects/"):
+            base_path = f"Projects/{base_path}"
+        
         created = api.create_folder_structure(
-            base_path=args["base_path"],
+            base_path=base_path,
             template=args.get("template", "research_project")
         )
 
@@ -1181,5 +1186,53 @@ class FolderTemplateToolHandler(ToolHandler):
             TextContent(
                 type="text",
                 text=json.dumps(created, indent=2)
+            )
+        ]
+
+class DailyProgressNoteToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_create_daily_progress")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Create a daily progress note in a project's Daily Progress folder with the naming format daily_progress_YYYY_MM_DD.md. Perfect for tracking daily learnings and progress on a project.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to the project (e.g., 'Projects/My Research' or just 'My Research' if it's in Projects/)"
+                    },
+                    "date": {
+                        "type": "string",
+                        "description": "Optional date in YYYY-MM-DD format. Defaults to today if not provided.",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                    }
+                },
+                "required": ["project_path"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "project_path" not in args:
+            raise RuntimeError("project_path argument required")
+
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        
+        # Automatically prepend "Projects/" if not already present
+        project_path = args["project_path"]
+        if not project_path.startswith("Projects/"):
+            project_path = f"Projects/{project_path}"
+        
+        file_path = api.create_daily_progress_note(
+            project_path=project_path,
+            date=args.get("date")
+        )
+
+        return [
+            TextContent(
+                type="text",
+                text=f"Created daily progress note: {file_path}"
             )
         ]

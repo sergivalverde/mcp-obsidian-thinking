@@ -790,7 +790,38 @@ SORT file.mtime DESC
                 "folders": ["Chats", "Research", "Daily Progress"],
                 "files": {
                     "README.md": f"# {base_path}\n\nProject created on {datetime.now().strftime('%Y-%m-%d')}\n",
-                    "index.md": f"---\nproject: {base_path}\nstatus: active\n---\n\n# {base_path}\n\n## Overview\n\n## Key Resources\n\n## Next Steps\n"
+                    "index.md": f"""---
+project: {base_path}
+status: active
+stage: exploration
+mode: thinking
+instructions: |
+  CRITICAL: I am in THINKING mode, not WRITING mode.
+  
+  DO NOT write articles, guides, or drafts for me.
+  Only help me explore and deepen my thinking about this project.
+  
+  Your role is to:
+  - Ask me probing questions to clarify my thoughts
+  - Help me identify patterns and connections
+  - Challenge my assumptions constructively
+  - Suggest areas to explore further
+  - Summarize what I've learned so far
+  - Organize research materials
+  
+  You are my thinking partner, not my ghostwriter.
+---
+
+# {base_path}
+
+## Overview
+
+## Key Questions
+
+## Resources
+
+## Next Steps
+"""
                 }
             },
             "simple": {
@@ -832,6 +863,58 @@ SORT file.mtime DESC
         
         return created_paths
     
+    def create_daily_progress_note(
+        self,
+        project_path: str,
+        date: Optional[str] = None
+    ) -> str:
+        """Create a daily progress note in a project's Daily Progress folder.
+        
+        Args:
+            project_path: Path to the project (e.g., "Projects/My Research")
+            date: Optional date in YYYY-MM-DD format (defaults to today)
+            
+        Returns:
+            Path to the created daily progress note
+        """
+        from datetime import datetime
+        
+        # Use today's date if not provided
+        if date is None:
+            date = datetime.now().strftime('%Y-%m-%d')
+        
+        # Convert date format from YYYY-MM-DD to YYYY_MM_DD
+        date_formatted = date.replace('-', '_')
+        
+        # Create the file path
+        filename = f"daily_progress_{date_formatted}.md"
+        file_path = f"{project_path}/Daily Progress/{filename}"
+        
+        # Create the content with frontmatter
+        content = f"""---
+date: [[{date}]]
+type: daily_progress
+project: {project_path}
+---
+
+# Daily Progress - [[{date}]]
+
+## What I Learned Today
+
+## Key Insights
+
+## Questions & Challenges
+
+## Next Steps
+
+## Resources Referenced
+"""
+        
+        # Write the file
+        self.put_content(file_path, content)
+        
+        return file_path
+    
     # ========================================
     # Automatic Internal Linking Methods
     # ========================================
@@ -839,17 +922,23 @@ SORT file.mtime DESC
     def _format_as_wiki_link(self, filepath: str) -> str:
         """Convert filepath to Obsidian wiki-link format.
         
+        Obsidian can resolve links by just the filename, so we extract
+        just the filename without the path for cleaner links.
+        
         Args:
             filepath: Path like "Research/file.md" or "folder/subfolder/note.md"
             
         Returns:
-            Wiki-link like "[[Research/file]]" (without .md extension)
+            Wiki-link like "[[file]]" (just filename, without path or .md extension)
         """
-        # Remove .md extension (Obsidian convention)
-        if filepath.endswith('.md'):
-            filepath = filepath[:-3]
+        # Extract just the filename from the path
+        filename = filepath.split('/')[-1]
         
-        return f"[[{filepath}]]"
+        # Remove .md extension (Obsidian convention)
+        if filename.endswith('.md'):
+            filename = filename[:-3]
+        
+        return f"[[{filename}]]"
     
     def _file_exists_in_vault(self, filepath: str) -> bool:
         """Check if a file exists in the vault.
@@ -903,7 +992,9 @@ SORT file.mtime DESC
         - "Research/mental_models.md"
         - "Daily Notes/2024-01-15.md"
         
-        And converts to: [[path/to/file]]
+        And converts to: [[filename]]
+        
+        Also normalizes existing wiki-links to use clean filename format.
         
         Args:
             content: Content to process
@@ -911,7 +1002,44 @@ SORT file.mtime DESC
         Returns:
             Content with file paths converted to wiki-links
         """
-        # Skip if content already has many wiki-links (likely already processed)
+        # First, normalize any existing wiki-links that have paths
+        # This handles cases where Claude or users write [[../../path/file]] or [[path/to/file]]
+        def normalize_wiki_link(match):
+            link_content = match.group(1)
+            
+            # Skip if it's a display text link like [[file|Display Text]]
+            if '|' in link_content:
+                parts = link_content.split('|', 1)
+                link_path = parts[0].strip()
+                display_text = parts[1].strip()
+                
+                # Normalize the link path part
+                # Remove ../ and ./ prefixes
+                link_path = re.sub(r'(?:\.\.\/|\.\/)+', '', link_path)
+                # Extract just filename
+                if '/' in link_path:
+                    link_path = link_path.split('/')[-1]
+                # Remove .md extension
+                if link_path.endswith('.md'):
+                    link_path = link_path[:-3]
+                
+                return f"[[{link_path}|{display_text}]]"
+            else:
+                # Remove ../ and ./ prefixes
+                link_content = re.sub(r'(?:\.\.\/|\.\/)+', '', link_content)
+                # Extract just filename from path
+                if '/' in link_content:
+                    link_content = link_content.split('/')[-1]
+                # Remove .md extension if present
+                if link_content.endswith('.md'):
+                    link_content = link_content[:-3]
+                
+                return f"[[{link_content}]]"
+        
+        # Normalize all existing wiki-links
+        content = re.sub(r'\[\[([^\]]+)\]\]', normalize_wiki_link, content)
+        
+        # Skip further processing if content already has many wiki-links (likely already processed)
         existing_links = re.findall(r'\[\[[^\]]+\]\]', content)
         if len(existing_links) > 10:
             return content

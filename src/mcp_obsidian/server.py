@@ -61,6 +61,7 @@ add_tool_handler(tools.LinkManagementToolHandler())
 add_tool_handler(tools.DateRangeToolHandler())
 add_tool_handler(tools.ProgressSummaryToolHandler())
 add_tool_handler(tools.FolderTemplateToolHandler())
+add_tool_handler(tools.DailyProgressNoteToolHandler())
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
