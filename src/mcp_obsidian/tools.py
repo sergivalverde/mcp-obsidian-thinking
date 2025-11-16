@@ -630,3 +630,448 @@ class RecentChangesToolHandler(ToolHandler):
                 text=json.dumps(results, indent=2)
             )
         ]
+
+class FrontmatterToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_frontmatter")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Manage frontmatter in Obsidian notes. Operations: read (get all frontmatter), update (merge fields), delete (remove field).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "description": "Operation to perform: read, update, or delete",
+                        "enum": ["read", "update", "delete"]
+                    },
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file (relative to vault root)",
+                        "format": "path"
+                    },
+                    "updates": {
+                        "type": "object",
+                        "description": "For 'update' operation: dictionary of fields to update"
+                    },
+                    "field": {
+                        "type": "string",
+                        "description": "For 'delete' operation: field name to delete"
+                    }
+                },
+                "required": ["operation", "filepath"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "operation" not in args or "filepath" not in args:
+            raise RuntimeError("operation and filepath arguments required")
+
+        operation = args["operation"]
+        filepath = args["filepath"]
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+
+        if operation == "read":
+            frontmatter = api.get_frontmatter(filepath)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(frontmatter, indent=2)
+                )
+            ]
+        elif operation == "update":
+            if "updates" not in args:
+                raise RuntimeError("updates argument required for update operation")
+            api.update_frontmatter(filepath, args["updates"])
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Successfully updated frontmatter in {filepath}"
+                )
+            ]
+        elif operation == "delete":
+            if "field" not in args:
+                raise RuntimeError("field argument required for delete operation")
+            api.delete_frontmatter_field(filepath, args["field"])
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Successfully deleted field '{args['field']}' from {filepath}"
+                )
+            ]
+        else:
+            raise RuntimeError(f"Unknown operation: {operation}")
+
+class TagToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_tags")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Work with tags in Obsidian. Operations: get_all (all unique tags), get_file_tags (tags from specific file), find_by_tags (files matching tags).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "description": "Operation to perform",
+                        "enum": ["get_all", "get_file_tags", "find_by_tags"]
+                    },
+                    "filepath": {
+                        "type": "string",
+                        "description": "For 'get_file_tags': path to the file",
+                        "format": "path"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "For 'find_by_tags': list of tags to search for"
+                    },
+                    "match_all": {
+                        "type": "boolean",
+                        "description": "For 'find_by_tags': if true, file must have all tags (AND), if false any tag (OR)",
+                        "default": False
+                    }
+                },
+                "required": ["operation"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "operation" not in args:
+            raise RuntimeError("operation argument required")
+
+        operation = args["operation"]
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+
+        if operation == "get_all":
+            tags = api.get_all_tags()
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"tags": tags}, indent=2)
+                )
+            ]
+        elif operation == "get_file_tags":
+            if "filepath" not in args:
+                raise RuntimeError("filepath argument required for get_file_tags operation")
+            tags = api.get_tags_from_file(args["filepath"])
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"filepath": args["filepath"], "tags": tags}, indent=2)
+                )
+            ]
+        elif operation == "find_by_tags":
+            if "tags" not in args:
+                raise RuntimeError("tags argument required for find_by_tags operation")
+            match_all = args.get("match_all", False)
+            files = api.find_files_by_tags(args["tags"], match_all)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"files": files, "tags": args["tags"], "match_all": match_all}, indent=2)
+                )
+            ]
+        else:
+            raise RuntimeError(f"Unknown operation: {operation}")
+
+class AttachmentManagementToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_attachments")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Manage attachments in Obsidian. Operations: list (list files in attachments folder), rename (rename and update references), find_references (find files referencing an attachment).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "description": "Operation to perform",
+                        "enum": ["list", "rename", "find_references"]
+                    },
+                    "folder_path": {
+                        "type": "string",
+                        "description": "For 'list': path to attachments folder",
+                        "default": "attachments"
+                    },
+                    "filepath": {
+                        "type": "string",
+                        "description": "For 'rename' or 'find_references': path to the attachment"
+                    },
+                    "new_name": {
+                        "type": "string",
+                        "description": "For 'rename': new filename"
+                    }
+                },
+                "required": ["operation"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "operation" not in args:
+            raise RuntimeError("operation argument required")
+
+        operation = args["operation"]
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+
+        if operation == "list":
+            folder_path = args.get("folder_path", "attachments")
+            attachments = api.list_attachments(folder_path)
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"folder": folder_path, "attachments": attachments}, indent=2)
+                )
+            ]
+        elif operation == "rename":
+            if "filepath" not in args or "new_name" not in args:
+                raise RuntimeError("filepath and new_name arguments required for rename operation")
+            api.rename_attachment(args["filepath"], args["new_name"])
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Successfully renamed {args['filepath']} to {args['new_name']}"
+                )
+            ]
+        elif operation == "find_references":
+            if "filepath" not in args:
+                raise RuntimeError("filepath argument required for find_references operation")
+            references = api.find_attachment_references(args["filepath"])
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"attachment": args["filepath"], "references": references}, indent=2)
+                )
+            ]
+        else:
+            raise RuntimeError(f"Unknown operation: {operation}")
+
+class LinkManagementToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_links")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Manage links in Obsidian. Operations: get_links (extract links from file), get_backlinks (find files linking to this file), update_links (update links when file is renamed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "description": "Operation to perform",
+                        "enum": ["get_links", "get_backlinks", "update_links"]
+                    },
+                    "filepath": {
+                        "type": "string",
+                        "description": "Path to the file",
+                        "format": "path"
+                    },
+                    "old_path": {
+                        "type": "string",
+                        "description": "For 'update_links': old file path"
+                    },
+                    "new_path": {
+                        "type": "string",
+                        "description": "For 'update_links': new file path"
+                    }
+                },
+                "required": ["operation"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "operation" not in args:
+            raise RuntimeError("operation argument required")
+
+        operation = args["operation"]
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+
+        if operation == "get_links":
+            if "filepath" not in args:
+                raise RuntimeError("filepath argument required for get_links operation")
+            links = api.get_links_in_file(args["filepath"])
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"filepath": args["filepath"], "links": links}, indent=2)
+                )
+            ]
+        elif operation == "get_backlinks":
+            if "filepath" not in args:
+                raise RuntimeError("filepath argument required for get_backlinks operation")
+            backlinks = api.get_backlinks(args["filepath"])
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps({"filepath": args["filepath"], "backlinks": backlinks}, indent=2)
+                )
+            ]
+        elif operation == "update_links":
+            if "old_path" not in args or "new_path" not in args:
+                raise RuntimeError("old_path and new_path arguments required for update_links operation")
+            count = api.update_links(args["old_path"], args["new_path"])
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Successfully updated links in {count} files"
+                )
+            ]
+        else:
+            raise RuntimeError(f"Unknown operation: {operation}")
+
+class DateRangeToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_files_by_date")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Get files by date range. Supports relative dates like 'last 3 days' via days_back parameter.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "days_back": {
+                        "type": "integer",
+                        "description": "Get files from last N days (alternative to start_date/end_date)",
+                        "minimum": 1
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Start date in ISO format (YYYY-MM-DD)"
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "End date in ISO format (YYYY-MM-DD)"
+                    },
+                    "folder_path": {
+                        "type": "string",
+                        "description": "Filter by folder path (empty for all)",
+                        "default": ""
+                    },
+                    "include_content": {
+                        "type": "boolean",
+                        "description": "Whether to include file content",
+                        "default": False
+                    }
+                }
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        
+        files = api.get_files_by_date_range(
+            start_date=args.get("start_date"),
+            end_date=args.get("end_date"),
+            folder_path=args.get("folder_path", ""),
+            days_back=args.get("days_back"),
+            include_content=args.get("include_content", False)
+        )
+
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(files, indent=2)
+            )
+        ]
+
+class ProgressSummaryToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_folder_progress")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Get progress summary for a folder. Shows all files changed in the last N days. Great for 'catch me up on last 3 days' queries.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "folder_path": {
+                        "type": "string",
+                        "description": "Path to the folder"
+                    },
+                    "days_back": {
+                        "type": "integer",
+                        "description": "Number of days to look back (default: 3)",
+                        "default": 3,
+                        "minimum": 1
+                    },
+                    "include_content": {
+                        "type": "boolean",
+                        "description": "Whether to include file content (default: false)",
+                        "default": False
+                    }
+                },
+                "required": ["folder_path"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "folder_path" not in args:
+            raise RuntimeError("folder_path argument required")
+
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        
+        progress = api.get_folder_progress(
+            folder_path=args["folder_path"],
+            days_back=args.get("days_back", 3),
+            include_content=args.get("include_content", False)
+        )
+
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(progress, indent=2)
+            )
+        ]
+
+class FolderTemplateToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_create_project")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Create a project folder with standardized structure. Templates: 'research_project' (creates Chats/, Research/, Daily Progress/ subfolders) or 'simple' (just index file).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "base_path": {
+                        "type": "string",
+                        "description": "Base path for the project (e.g., 'Projects/My Research')"
+                    },
+                    "template": {
+                        "type": "string",
+                        "description": "Template to use",
+                        "enum": ["research_project", "simple"],
+                        "default": "research_project"
+                    }
+                },
+                "required": ["base_path"]
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        if "base_path" not in args:
+            raise RuntimeError("base_path argument required")
+
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        
+        created = api.create_folder_structure(
+            base_path=args["base_path"],
+            template=args.get("template", "research_project")
+        )
+
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(created, indent=2)
+            )
+        ]
