@@ -3,10 +3,11 @@ import urllib.parse
 import os
 import re
 import yaml
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from datetime import datetime, timedelta
+from .backend import VaultBackend
 
-class Obsidian():
+class ObsidianAPIBackend(VaultBackend):
     def __init__(
             self, 
             api_key: str,
@@ -1259,3 +1260,7 @@ tags: [daily-progress, research-planning]
                 )
         
         return content
+
+
+# Backward compatibility alias
+Obsidian = ObsidianAPIBackend

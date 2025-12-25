@@ -7,13 +7,12 @@ from mcp.types import (
 )
 import json
 import os
-from . import obsidian
 
-api_key = os.getenv("OBSIDIAN_API_KEY", "")
-obsidian_host = os.getenv("OBSIDIAN_HOST", "127.0.0.1")
-
-if api_key == "":
-    raise ValueError(f"OBSIDIAN_API_KEY environment variable required. Working directory: {os.getcwd()}")
+# Import get_backend - avoid circular import by importing at runtime
+def get_backend():
+    """Get backend instance from server module."""
+    from . import server
+    return server.get_backend()
 
 TOOL_LIST_FILES_IN_VAULT = "obsidian_list_files_in_vault"
 TOOL_LIST_FILES_IN_DIR = "obsidian_list_files_in_dir"
@@ -96,7 +95,7 @@ class ListFilesInVaultToolHandler(ToolHandler):
         )
 
     def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         files = api.list_files_in_vault()
 
@@ -132,7 +131,7 @@ class ListFilesInDirToolHandler(ToolHandler):
         if "dirpath" not in args:
             raise RuntimeError("dirpath argument missing in arguments")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         files = api.list_files_in_dir(args["dirpath"])
 
@@ -168,7 +167,7 @@ class GetFileContentsToolHandler(ToolHandler):
         if "filepath" not in args:
             raise RuntimeError("filepath argument missing in arguments")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         content = api.get_file_contents(args["filepath"])
         
@@ -229,7 +228,7 @@ class SearchToolHandler(ToolHandler):
 
         context_length = args.get("context_length", 100)
         
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         results = api.search(args["query"], context_length)
         
         formatted_results = []
@@ -533,7 +532,7 @@ class BatchGetFileContentsToolHandler(ToolHandler):
         if "filepaths" not in args:
             raise RuntimeError("filepaths argument missing in arguments")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         
         # Process each file individually to extract frontmatter instructions
         all_contents = []
@@ -621,7 +620,7 @@ class PeriodicNotesToolHandler(ToolHandler):
         if type not in valid_types:
             raise RuntimeError(f"Invalid type: {type}. Must be one of: {', '.join(valid_types)}")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         content = api.get_periodic_note(period,type)
 
         return [
@@ -681,7 +680,7 @@ class RecentPeriodicNotesToolHandler(ToolHandler):
         if not isinstance(include_content, bool):
             raise RuntimeError(f"Invalid include_content: {include_content}. Must be a boolean")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         results = api.get_recent_periodic_notes(period, limit, include_content)
 
         return [
@@ -728,7 +727,7 @@ class RecentChangesToolHandler(ToolHandler):
         if not isinstance(days, int) or days < 1:
             raise RuntimeError(f"Invalid days: {days}. Must be a positive integer")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         results = api.get_recent_changes(limit, days)
 
         return [
@@ -778,7 +777,7 @@ class FrontmatterToolHandler(ToolHandler):
 
         operation = args["operation"]
         filepath = args["filepath"]
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         if operation == "read":
             frontmatter = api.get_frontmatter(filepath)
@@ -852,7 +851,7 @@ class TagToolHandler(ToolHandler):
             raise RuntimeError("operation argument required")
 
         operation = args["operation"]
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         if operation == "get_all":
             tags = api.get_all_tags()
@@ -925,7 +924,7 @@ class AttachmentManagementToolHandler(ToolHandler):
             raise RuntimeError("operation argument required")
 
         operation = args["operation"]
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         if operation == "list":
             folder_path = args.get("folder_path", "attachments")
@@ -998,7 +997,7 @@ class LinkManagementToolHandler(ToolHandler):
             raise RuntimeError("operation argument required")
 
         operation = args["operation"]
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         if operation == "get_links":
             if "filepath" not in args:
@@ -1072,7 +1071,7 @@ class DateRangeToolHandler(ToolHandler):
         )
 
     def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         
         files = api.get_files_by_date_range(
             start_date=args.get("start_date"),
@@ -1124,7 +1123,7 @@ class ProgressSummaryToolHandler(ToolHandler):
         if "folder_path" not in args:
             raise RuntimeError("folder_path argument required")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         
         progress = api.get_folder_progress(
             folder_path=args["folder_path"],
@@ -1169,7 +1168,7 @@ class FolderTemplateToolHandler(ToolHandler):
         if "base_path" not in args:
             raise RuntimeError("base_path argument required")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         
         # Automatically prepend "Projects/" if not already present
         base_path = args["base_path"]
@@ -1217,14 +1216,14 @@ class DailyProgressNoteToolHandler(ToolHandler):
         if "project_path" not in args:
             raise RuntimeError("project_path argument required")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
         
         # Automatically prepend "Projects/" if not already present
         project_path = args["project_path"]
         if not project_path.startswith("Projects/"):
             project_path = f"Projects/{project_path}"
         
-        file_path = api.create_daily_progress_note(
+        file_path = backend.create_daily_progress_note(
             project_path=project_path,
             date=args.get("date")
         )
@@ -1233,5 +1232,43 @@ class DailyProgressNoteToolHandler(ToolHandler):
             TextContent(
                 type="text",
                 text=f"Created daily progress note: {file_path}"
+            )
+        ]
+
+class GitSyncToolHandler(ToolHandler):
+    def __init__(self):
+        super().__init__("obsidian_git_sync")
+
+    def get_tool_description(self):
+        return Tool(
+            name=self.name,
+            description="Sync vault changes with GitHub repository. Commits all changes and pushes to remote. Only available in GitHub mode. Use when the user asks to 'sync', 'push changes', 'update vault', or similar.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "commit_message": {
+                        "type": "string",
+                        "description": "Commit message for the changes",
+                        "default": "Update vault from MCP session"
+                    }
+                },
+                "required": []
+            }
+        )
+
+    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
+        backend = get_backend()
+        
+        # Check if backend supports git sync
+        if not hasattr(backend, 'git_sync'):
+            raise RuntimeError("Git sync only available in GitHub mode. Set OBSIDIAN_MODE=github to use this feature.")
+        
+        commit_message = args.get("commit_message", "Update vault from MCP session")
+        result = backend.git_sync(commit_message)
+        
+        return [
+            TextContent(
+                type="text",
+                text=result.get("message", "Successfully synced changes to GitHub")
             )
         ]

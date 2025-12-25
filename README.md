@@ -45,6 +45,9 @@ The server implements multiple tools to interact with Obsidian:
 - obsidian_create_project: Create project folders with standardized structure (research_project template includes Chats/, Research/, Daily Progress/ subfolders)
 - obsidian_create_daily_progress: Create daily progress notes with format `daily_progress_YYYY_MM_DD.md` in a project's Daily Progress folder
 
+**Git Sync (GitHub Mode Only):**
+- obsidian_git_sync: Commit and push all vault changes to GitHub repository (only available when OBSIDIAN_MODE=github)
+
 **Automatic Features:**
 - **Automatic Internal Linking**: When writing content, file path mentions are automatically converted to Obsidian wiki-links (e.g., `Research/article.md` becomes `[[article]]`)
 - **Backtick File Path Conversion**: File paths in backticks (like `` `Shane Parrish - Article.md` ``) are automatically converted to wiki-links if the file exists anywhere in your vault
@@ -611,6 +614,94 @@ Note:
 - You can find the API key in the Obsidian plugin config
 - Default port is 27124 if not specified
 - Default host is 127.0.0.1 if not specified
+
+### GitHub Mode (Alternative Backend)
+
+Instead of using the Obsidian REST API, you can use the MCP with a local git clone of your vault. This is useful for:
+- Working with vaults stored in GitHub repositories
+- Version controlling your notes
+- Syncing changes across devices via git
+- Working offline without the Obsidian app running
+
+#### How It Works
+
+1. **Session Start**: Automatically pulls latest changes from GitHub
+2. **Read/Write**: All operations work directly on local files
+3. **Manual Sync**: Use the `obsidian_git_sync` tool to commit and push changes
+4. **Auto-linking**: Works exactly the same as API mode
+
+#### Environment Variables for GitHub Mode
+
+Add these to your server config or `.env` file:
+
+```json
+{
+  "mcp-obsidian": {
+    "command": "uvx",
+    "args": ["mcp-obsidian"],
+    "env": {
+      "OBSIDIAN_MODE": "github",
+      "VAULT_PATH": "/Users/username/Documents/ObsidianVault",
+      "GITHUB_REPO": "git@github.com:username/my-vault.git"
+    }
+  }
+}
+```
+
+Or in `.env`:
+
+```bash
+# GitHub Mode Configuration
+OBSIDIAN_MODE=github
+VAULT_PATH=/Users/username/Documents/ObsidianVault
+GITHUB_REPO=git@github.com:username/my-vault.git
+
+# Optional: Only needed for HTTPS authentication (not needed for SSH)
+# GITHUB_TOKEN=ghp_xxxxxxxxxxxx
+```
+
+**Important Notes:**
+- `VAULT_PATH` should point to your local git clone (same location as your vault)
+- The repository must already be cloned - the MCP won't clone it for you
+- `GITHUB_REPO` can be either SSH (`git@github.com:...`) or HTTPS (`https://github.com/...`) format
+- For HTTPS repos, you may need to provide `GITHUB_TOKEN` (Personal Access Token)
+- For SSH repos, ensure your SSH keys are configured locally
+
+#### Git Sync Tool
+
+When in GitHub mode, you have access to the `obsidian_git_sync` tool:
+
+**Usage:**
+```
+Claude will automatically call this tool when you say:
+- "Sync my work to GitHub"
+- "Push these changes"
+- "Update the vault"
+- "Commit and sync"
+```
+
+**What it does:**
+1. Stages all changes (`git add -A`)
+2. Commits with your message (or default: "Update vault from MCP session")
+3. Pulls latest changes with auto-merge (`git pull --rebase`)
+4. Pushes to remote (`git push`)
+
+**Example conversation:**
+```
+You: I've finished organizing my research notes. Sync everything to GitHub.
+Claude: [calls obsidian_git_sync] ✅ Successfully synced changes to GitHub
+```
+
+#### Switching Between Modes
+
+You can switch between API mode and GitHub mode by changing the `OBSIDIAN_MODE` environment variable:
+
+- **API Mode** (default): `OBSIDIAN_MODE=api` or omit the variable
+- **GitHub Mode**: `OBSIDIAN_MODE=github`
+
+All tools work identically in both modes. The only difference is:
+- API mode requires Obsidian app running with REST API plugin
+- GitHub mode works directly with files and requires git repository
 
 ## Quickstart
 
