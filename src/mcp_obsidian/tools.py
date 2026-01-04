@@ -169,11 +169,11 @@ class GetFileContentsToolHandler(ToolHandler):
 
         backend = get_backend()
 
-        content = backend.get_file_contents(args["filepath"])
+        content = api.get_file_contents(args["filepath"])
         
         # Extract and highlight frontmatter instructions
         try:
-            frontmatter = backend.get_frontmatter(args["filepath"])
+            frontmatter = api.get_frontmatter(args["filepath"])
             instruction_header = _format_frontmatter_instructions(frontmatter)
             
             if instruction_header:
@@ -532,17 +532,17 @@ class BatchGetFileContentsToolHandler(ToolHandler):
         if "filepaths" not in args:
             raise RuntimeError("filepaths argument missing in arguments")
 
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
         
         # Process each file individually to extract frontmatter instructions
         all_contents = []
         for filepath in args["filepaths"]:
             try:
-                content = backend.get_file_contents(filepath)
+                content = api.get_file_contents(filepath)
                 
                 # Try to extract frontmatter instructions
                 try:
-                    frontmatter = backend.get_frontmatter(filepath)
+                    frontmatter = api.get_frontmatter(filepath)
                     instruction_header = _format_frontmatter_instructions(frontmatter)
                     
                     if instruction_header:
@@ -777,10 +777,10 @@ class FrontmatterToolHandler(ToolHandler):
 
         operation = args["operation"]
         filepath = args["filepath"]
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
 
         if operation == "read":
-            frontmatter = backend.get_frontmatter(filepath)
+            frontmatter = api.get_frontmatter(filepath)
             return [
                 TextContent(
                     type="text",
@@ -790,7 +790,7 @@ class FrontmatterToolHandler(ToolHandler):
         elif operation == "update":
             if "updates" not in args:
                 raise RuntimeError("updates argument required for update operation")
-            backend.update_frontmatter(filepath, args["updates"])
+            api.update_frontmatter(filepath, args["updates"])
             return [
                 TextContent(
                     type="text",
@@ -800,7 +800,7 @@ class FrontmatterToolHandler(ToolHandler):
         elif operation == "delete":
             if "field" not in args:
                 raise RuntimeError("field argument required for delete operation")
-            backend.delete_frontmatter_field(filepath, args["field"])
+            api.delete_frontmatter_field(filepath, args["field"])
             return [
                 TextContent(
                     type="text",
@@ -851,10 +851,10 @@ class TagToolHandler(ToolHandler):
             raise RuntimeError("operation argument required")
 
         operation = args["operation"]
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
 
         if operation == "get_all":
-            tags = backend.get_all_tags()
+            tags = api.get_all_tags()
             return [
                 TextContent(
                     type="text",
@@ -864,7 +864,7 @@ class TagToolHandler(ToolHandler):
         elif operation == "get_file_tags":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for get_file_tags operation")
-            tags = backend.get_tags_from_file(args["filepath"])
+            tags = api.get_tags_from_file(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -875,7 +875,7 @@ class TagToolHandler(ToolHandler):
             if "tags" not in args:
                 raise RuntimeError("tags argument required for find_by_tags operation")
             match_all = args.get("match_all", False)
-            files = backend.find_files_by_tags(args["tags"], match_all)
+            files = api.find_files_by_tags(args["tags"], match_all)
             return [
                 TextContent(
                     type="text",
@@ -924,11 +924,11 @@ class AttachmentManagementToolHandler(ToolHandler):
             raise RuntimeError("operation argument required")
 
         operation = args["operation"]
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
 
         if operation == "list":
             folder_path = args.get("folder_path", "attachments")
-            attachments = backend.list_attachments(folder_path)
+            attachments = api.list_attachments(folder_path)
             return [
                 TextContent(
                     type="text",
@@ -938,7 +938,7 @@ class AttachmentManagementToolHandler(ToolHandler):
         elif operation == "rename":
             if "filepath" not in args or "new_name" not in args:
                 raise RuntimeError("filepath and new_name arguments required for rename operation")
-            backend.rename_attachment(args["filepath"], args["new_name"])
+            api.rename_attachment(args["filepath"], args["new_name"])
             return [
                 TextContent(
                     type="text",
@@ -948,7 +948,7 @@ class AttachmentManagementToolHandler(ToolHandler):
         elif operation == "find_references":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for find_references operation")
-            references = backend.find_attachment_references(args["filepath"])
+            references = api.find_attachment_references(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -997,12 +997,12 @@ class LinkManagementToolHandler(ToolHandler):
             raise RuntimeError("operation argument required")
 
         operation = args["operation"]
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
 
         if operation == "get_links":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for get_links operation")
-            links = backend.get_links_in_file(args["filepath"])
+            links = api.get_links_in_file(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -1012,7 +1012,7 @@ class LinkManagementToolHandler(ToolHandler):
         elif operation == "get_backlinks":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for get_backlinks operation")
-            backlinks = backend.get_backlinks(args["filepath"])
+            backlinks = api.get_backlinks(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -1022,7 +1022,7 @@ class LinkManagementToolHandler(ToolHandler):
         elif operation == "update_links":
             if "old_path" not in args or "new_path" not in args:
                 raise RuntimeError("old_path and new_path arguments required for update_links operation")
-            count = backend.update_links(args["old_path"], args["new_path"])
+            count = api.update_links(args["old_path"], args["new_path"])
             return [
                 TextContent(
                     type="text",
@@ -1071,9 +1071,9 @@ class DateRangeToolHandler(ToolHandler):
         )
 
     def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
         
-        files = backend.get_files_by_date_range(
+        files = api.get_files_by_date_range(
             start_date=args.get("start_date"),
             end_date=args.get("end_date"),
             folder_path=args.get("folder_path", ""),
@@ -1123,9 +1123,9 @@ class ProgressSummaryToolHandler(ToolHandler):
         if "folder_path" not in args:
             raise RuntimeError("folder_path argument required")
 
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
         
-        progress = backend.get_folder_progress(
+        progress = api.get_folder_progress(
             folder_path=args["folder_path"],
             days_back=args.get("days_back", 3),
             include_content=args.get("include_content", False)
@@ -1168,14 +1168,14 @@ class FolderTemplateToolHandler(ToolHandler):
         if "base_path" not in args:
             raise RuntimeError("base_path argument required")
 
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
         
         # Automatically prepend "Projects/" if not already present
         base_path = args["base_path"]
         if not base_path.startswith("Projects/"):
             base_path = f"Projects/{base_path}"
         
-        created = backend.create_folder_structure(
+        created = api.create_folder_structure(
             base_path=base_path,
             template=args.get("template", "research_project")
         )
@@ -1216,14 +1216,14 @@ class DailyProgressNoteToolHandler(ToolHandler):
         if "project_path" not in args:
             raise RuntimeError("project_path argument required")
 
-        backend = get_backend()
+        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
         
         # Automatically prepend "Projects/" if not already present
         project_path = args["project_path"]
         if not project_path.startswith("Projects/"):
             project_path = f"Projects/{project_path}"
         
-        file_path = backend.create_daily_progress_note(
+        file_path = api.create_daily_progress_note(
             project_path=project_path,
             date=args.get("date")
         )
@@ -1232,43 +1232,5 @@ class DailyProgressNoteToolHandler(ToolHandler):
             TextContent(
                 type="text",
                 text=f"Created daily progress note: {file_path}"
-            )
-        ]
-
-class GitSyncToolHandler(ToolHandler):
-    def __init__(self):
-        super().__init__("obsidian_git_sync")
-
-    def get_tool_description(self):
-        return Tool(
-            name=self.name,
-            description="Sync vault changes with GitHub repository. Commits all changes and pushes to remote. Only available in GitHub mode. Use when the user asks to 'sync', 'push changes', 'update vault', or similar.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "commit_message": {
-                        "type": "string",
-                        "description": "Commit message for the changes",
-                        "default": "Update vault from MCP session"
-                    }
-                },
-                "required": []
-            }
-        )
-
-    def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        backend = get_backend()
-        
-        # Check if backend supports git sync
-        if not hasattr(backend, 'git_sync'):
-            raise RuntimeError("Git sync only available in GitHub mode. Set OBSIDIAN_MODE=github to use this feature.")
-        
-        commit_message = args.get("commit_message", "Update vault from MCP session")
-        result = backend.git_sync(commit_message)
-        
-        return [
-            TextContent(
-                type="text",
-                text=result.get("message", "Successfully synced changes to GitHub")
             )
         ]
