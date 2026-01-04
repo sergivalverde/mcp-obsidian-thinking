@@ -7,13 +7,12 @@ from mcp.types import (
 )
 import json
 import os
-from . import obsidian
 
-api_key = os.getenv("OBSIDIAN_API_KEY", "")
-obsidian_host = os.getenv("OBSIDIAN_HOST", "127.0.0.1")
-
-if api_key == "":
-    raise ValueError(f"OBSIDIAN_API_KEY environment variable required. Working directory: {os.getcwd()}")
+# Import get_backend - avoid circular import by importing at runtime
+def get_backend():
+    """Get backend instance from server module."""
+    from . import server
+    return server.get_backend()
 
 TOOL_LIST_FILES_IN_VAULT = "obsidian_list_files_in_vault"
 TOOL_LIST_FILES_IN_DIR = "obsidian_list_files_in_dir"
@@ -96,9 +95,9 @@ class ListFilesInVaultToolHandler(ToolHandler):
         )
 
     def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
-        files = api.list_files_in_vault()
+        files = backend.list_files_in_vault()
 
         return [
             TextContent(
@@ -132,9 +131,9 @@ class ListFilesInDirToolHandler(ToolHandler):
         if "dirpath" not in args:
             raise RuntimeError("dirpath argument missing in arguments")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
-        files = api.list_files_in_dir(args["dirpath"])
+        files = backend.list_files_in_dir(args["dirpath"])
 
         return [
             TextContent(
@@ -168,7 +167,7 @@ class GetFileContentsToolHandler(ToolHandler):
         if "filepath" not in args:
             raise RuntimeError("filepath argument missing in arguments")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
+        backend = get_backend()
 
         content = api.get_file_contents(args["filepath"])
         
@@ -229,8 +228,8 @@ class SearchToolHandler(ToolHandler):
 
         context_length = args.get("context_length", 100)
         
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-        results = api.search(args["query"], context_length)
+        backend = get_backend()
+        results = backend.search(args["query"], context_length)
         
         formatted_results = []
         for result in results:
@@ -288,8 +287,8 @@ class AppendContentToolHandler(ToolHandler):
        if "filepath" not in args or "content" not in args:
            raise RuntimeError("filepath and content arguments required")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.append_content(args.get("filepath", ""), args["content"])
+       backend = get_backend()
+       backend.append_content(args.get("filepath", ""), args["content"])
 
        return [
            TextContent(
@@ -341,8 +340,8 @@ class PatchContentToolHandler(ToolHandler):
        if not all(k in args for k in ["filepath", "operation", "target_type", "target", "content"]):
            raise RuntimeError("filepath, operation, target_type, target and content arguments required")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.patch_content(
+       backend = get_backend()
+       backend.patch_content(
            args.get("filepath", ""),
            args.get("operation", ""),
            args.get("target_type", ""),
@@ -386,8 +385,8 @@ class PutContentToolHandler(ToolHandler):
        if "filepath" not in args or "content" not in args:
            raise RuntimeError("filepath and content arguments required")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.put_content(args.get("filepath", ""), args["content"])
+       backend = get_backend()
+       backend.put_content(args.get("filepath", ""), args["content"])
 
        return [
            TextContent(
@@ -430,8 +429,8 @@ class DeleteFileToolHandler(ToolHandler):
        if not args.get("confirm", False):
            raise RuntimeError("confirm must be set to true to delete a file")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.delete_file(args["filepath"])
+       backend = get_backend()
+       backend.delete_file(args["filepath"])
 
        return [
            TextContent(
@@ -494,8 +493,8 @@ class ComplexSearchToolHandler(ToolHandler):
        if "query" not in args:
            raise RuntimeError("query argument missing in arguments")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       results = api.search_json(args.get("query", ""))
+       backend = get_backend()
+       results = backend.search_json(args.get("query", ""))
 
        return [
            TextContent(
@@ -621,8 +620,8 @@ class PeriodicNotesToolHandler(ToolHandler):
         if type not in valid_types:
             raise RuntimeError(f"Invalid type: {type}. Must be one of: {', '.join(valid_types)}")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-        content = api.get_periodic_note(period,type)
+        backend = get_backend()
+        content = backend.get_periodic_note(period,type)
 
         return [
             TextContent(
@@ -681,8 +680,8 @@ class RecentPeriodicNotesToolHandler(ToolHandler):
         if not isinstance(include_content, bool):
             raise RuntimeError(f"Invalid include_content: {include_content}. Must be a boolean")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-        results = api.get_recent_periodic_notes(period, limit, include_content)
+        backend = get_backend()
+        results = backend.get_recent_periodic_notes(period, limit, include_content)
 
         return [
             TextContent(
@@ -728,8 +727,8 @@ class RecentChangesToolHandler(ToolHandler):
         if not isinstance(days, int) or days < 1:
             raise RuntimeError(f"Invalid days: {days}. Must be a positive integer")
 
-        api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-        results = api.get_recent_changes(limit, days)
+        backend = get_backend()
+        results = backend.get_recent_changes(limit, days)
 
         return [
             TextContent(

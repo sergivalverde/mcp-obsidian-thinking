@@ -16,6 +16,9 @@ from mcp.types import (
 load_dotenv()
 
 from . import tools
+from .backend import VaultBackend
+from .obsidian import ObsidianAPIBackend
+from .github_backend import GitHubBackend
 
 # Load environment variables
 
@@ -23,11 +26,50 @@ from . import tools
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp-obsidian")
 
-api_key = os.getenv("OBSIDIAN_API_KEY")
-if not api_key:
-    raise ValueError(f"OBSIDIAN_API_KEY environment variable required. Working directory: {os.getcwd()}")
+# Backend factory
+_backend_instance = None
+
+def get_backend() -> VaultBackend:
+    """Get the configured backend instance (singleton)."""
+    global _backend_instance
+    
+    if _backend_instance is None:
+        obsidian_mode = os.getenv("OBSIDIAN_MODE", "api").lower()
+        
+        if obsidian_mode == "github":
+            # GitHub mode
+            vault_path = os.getenv("VAULT_PATH")
+            github_repo = os.getenv("GITHUB_REPO")
+            github_token = os.getenv("GITHUB_TOKEN")
+            
+            if not vault_path:
+                raise ValueError("VAULT_PATH required for GitHub mode")
+            if not github_repo:
+                raise ValueError("GITHUB_REPO required for GitHub mode")
+            
+            logger.info(f"Initializing GitHub backend: {vault_path}")
+            _backend_instance = GitHubBackend(vault_path, github_repo, github_token)
+        else:
+            # API mode (default)
+            api_key = os.getenv("OBSIDIAN_API_KEY")
+            if not api_key:
+                raise ValueError(f"OBSIDIAN_API_KEY required for API mode. Working directory: {os.getcwd()}")
+            
+            logger.info("Initializing Obsidian API backend")
+            _backend_instance = ObsidianAPIBackend(
+                api_key=api_key,
+                protocol=os.getenv('OBSIDIAN_PROTOCOL', 'https'),
+                host=os.getenv('OBSIDIAN_HOST', '127.0.0.1'),
+                port=int(os.getenv('OBSIDIAN_PORT', '27124')),
+                verify_ssl=False
+            )
+    
+    return _backend_instance
 
 app = Server("mcp-obsidian")
+
+# Export get_backend for use in tools
+__all__ = ['get_backend']
 
 tool_handlers = {}
 def add_tool_handler(tool_class: tools.ToolHandler):
