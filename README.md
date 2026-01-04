@@ -58,11 +58,12 @@ Connect Claude to your Obsidian vault for deep research and thinking work. No Da
 - **No False Positives**: Links to non-existent files are NEVER normalized or created. If you write `[[Blue Ocean Strategy]]` and that file doesn't exist, it stays exactly as-is. This prevents false positive links in your vault.
 
 # Create virtual environment and install
+```
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
 
-### Configuration
+## Configuration
 
 #### For Raycast
 
