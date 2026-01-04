@@ -244,6 +244,7 @@ class ObsidianAPIBackend(VaultBackend):
         Returns:
             List of recent periodic notes
         """
+        # Try the API endpoint first
         url = f"{self.get_base_url()}/periodic/{period}/recent"
         params = {
             "limit": limit,
@@ -258,11 +259,56 @@ class ObsidianAPIBackend(VaultBackend):
                 verify=self.verify_ssl, 
                 timeout=self.timeout
             )
-            response.raise_for_status()
+            # If endpoint doesn't exist, fall back to manual search
+            if response.status_code == 404:
+                return self._fallback_periodic_notes(period, limit, include_content)
             
+            response.raise_for_status()
             return response.json()
 
         return self._safe_call(call_fn)
+    
+    def _fallback_periodic_notes(self, period: str, limit: int, include_content: bool) -> list:
+        """Fallback method to find periodic notes by pattern matching."""
+        # Define patterns for different period types
+        patterns = {
+            'daily': r'\d{4}-\d{2}-\d{2}',
+            'weekly': r'\d{4}-W\d{2}',
+            'monthly': r'\d{4}-\d{2}',
+            'quarterly': r'\d{4}-Q[1-4]',
+            'yearly': r'\d{4}'
+        }
+        
+        pattern = patterns.get(period)
+        if not pattern:
+            return []
+        
+        # Get all files
+        all_files = self.list_files_in_vault()
+        
+        # Filter for periodic notes matching the pattern
+        import re
+        periodic_files = []
+        for filename in all_files:
+            if isinstance(filename, str) and re.search(pattern, filename) and filename.endswith('.md'):
+                periodic_files.append(filename)
+        
+        # Sort by filename (which should sort by date for ISO format)
+        periodic_files.sort(reverse=True)
+        periodic_files = periodic_files[:limit]
+        
+        # Build result
+        results = []
+        for filepath in periodic_files:
+            result = {'path': filepath, 'filename': filepath}
+            if include_content:
+                try:
+                    result['content'] = self.get_file_contents(filepath)
+                except:
+                    result['content'] = None
+            results.append(result)
+        
+        return results
     
     def get_recent_changes(self, limit: int = 10, days: int = 90) -> Any:
         """Get recently modified files in the vault.
@@ -274,35 +320,44 @@ class ObsidianAPIBackend(VaultBackend):
         Returns:
             List of recently modified files with metadata
         """
-        # Build the DQL query
-        query_lines = [
-            "TABLE file.mtime",
-            f"WHERE file.mtime >= date(today) - dur({days} days)",
-            "SORT file.mtime DESC",
-            f"LIMIT {limit}"
-        ]
+        # Get all files from vault listing
+        all_files = self.list_files_in_vault()
         
-        # Join with proper DQL line breaks
-        dql_query = "\n".join(query_lines)
+        # Filter for markdown files only
+        md_files = [f for f in all_files if isinstance(f, str) and f.endswith('.md')]
         
-        # Make the request to search endpoint
-        url = f"{self.get_base_url()}/search/"
-        headers = self._get_headers() | {
-            'Content-Type': 'application/vnd.olrapi.dataview.dql+txt'
-        }
+        # Get modification times
+        from datetime import datetime, timedelta
+        cutoff_ts = (datetime.now() - timedelta(days=days)).timestamp()
         
-        def call_fn():
-            response = requests.post(
-                url,
-                headers=headers,
-                data=dql_query.encode('utf-8'),
-                verify=self.verify_ssl,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
-
-        return self._safe_call(call_fn)
+        recent_files = []
+        for filepath in md_files[:100]:  # Limit to first 100 to avoid timeout
+            try:
+                # Get file metadata
+                stat_url = f"{self.get_base_url()}/vault/{filepath}"
+                stat_response = requests.get(
+                    stat_url,
+                    headers=self._get_headers(),
+                    verify=self.verify_ssl,
+                    timeout=self.timeout
+                )
+                if stat_response.status_code == 200:
+                    file_info = stat_response.json()
+                    mtime = file_info.get('stat', {}).get('mtime', 0) / 1000  # Convert ms to seconds
+                    
+                    if mtime >= cutoff_ts:
+                        recent_files.append({
+                            'path': filepath,
+                            'filename': filepath.split('/')[-1],
+                            'mtime': mtime,
+                            **file_info
+                        })
+            except:
+                continue
+        
+        # Sort by modification time (most recent first) and limit
+        recent_files.sort(key=lambda x: x.get('mtime', 0), reverse=True)
+        return recent_files[:limit]
     
     def get_frontmatter(self, filepath: str) -> Dict[str, Any]:
         """Extract frontmatter from a file.
@@ -700,47 +755,58 @@ class ObsidianAPIBackend(VaultBackend):
             start_dt = datetime.fromisoformat(start_date) if start_date else datetime.min
             end_dt = datetime.fromisoformat(end_date) if end_date else datetime.max
         
-        # Use DQL query to get files
-        days_val = days_back if days_back else 365
-        dql_query = f"""
-TABLE file.mtime, file.ctime
-WHERE file.mtime >= date(today) - dur({days_val} days)
-SORT file.mtime DESC
-"""
+        # Convert to timestamps for comparison
+        start_ts = start_dt.timestamp()
+        end_ts = end_dt.timestamp()
         
-        url = f"{self.get_base_url()}/search/"
-        headers = self._get_headers() | {
-            'Content-Type': 'application/vnd.olrapi.dataview.dql+txt'
-        }
+        # Get all files from vault
+        if folder_path:
+            all_files = self.list_files_in_dir(folder_path)
+        else:
+            all_files = self.list_files_in_vault()
         
-        def call_fn():
-            response = requests.post(
-                url,
-                headers=headers,
-                data=dql_query.encode('utf-8'),
-                verify=self.verify_ssl,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            return response.json()
+        # Filter for markdown files
+        md_files = [f for f in all_files if isinstance(f, str) and f.endswith('.md')]
         
-        results = self._safe_call(call_fn)
-        
-        # Filter by folder if specified
+        # Filter by folder and date
         filtered_results = []
-        for result in results:
-            path = result.get('path', '')
-            if folder_path and not path.startswith(folder_path):
+        for path in md_files[:50]:  # Limit to avoid timeout
+            # Get file metadata to check modification time
+            try:
+                stat_url = f"{self.get_base_url()}/vault/{path}"
+                stat_response = requests.get(
+                    stat_url,
+                    headers=self._get_headers(),
+                    verify=self.verify_ssl,
+                    timeout=self.timeout
+                )
+                if stat_response.status_code != 200:
+                    continue
+                    
+                file_info = stat_response.json()
+                mtime = file_info.get('stat', {}).get('mtime', 0) / 1000  # Convert ms to seconds
+                
+                # Check if within date range
+                if start_ts <= mtime <= end_ts:
+                    file_data = {
+                        'path': path,
+                        'filename': path.split('/')[-1],
+                        'mtime': mtime,
+                        **file_info
+                    }
+                    
+                    if include_content:
+                        try:
+                            file_data['content'] = self.get_file_contents(path)
+                        except:
+                            file_data['content'] = None
+                    
+                    filtered_results.append(file_data)
+            except:
                 continue
-            
-            if include_content:
-                try:
-                    result['content'] = self.get_file_contents(path)
-                except:
-                    result['content'] = None
-            
-            filtered_results.append(result)
         
+        # Sort by modification time (most recent first)
+        filtered_results.sort(key=lambda x: x.get('mtime', 0), reverse=True)
         return filtered_results
     
     def get_folder_progress(

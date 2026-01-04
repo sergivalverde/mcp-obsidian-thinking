@@ -1,9 +1,9 @@
-from . import server
 import asyncio
 
 def main():
     """Main entry point for the package."""
+    # Import here to avoid circular import warnings
+    from . import server
     asyncio.run(server.main())
 
-# Optionally expose other important items at package level
-__all__ = ['main', 'server']
+__all__ = ['main']

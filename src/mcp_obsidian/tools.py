@@ -97,7 +97,7 @@ class ListFilesInVaultToolHandler(ToolHandler):
     def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         backend = get_backend()
 
-        files = api.list_files_in_vault()
+        files = backend.list_files_in_vault()
 
         return [
             TextContent(
@@ -133,7 +133,7 @@ class ListFilesInDirToolHandler(ToolHandler):
 
         backend = get_backend()
 
-        files = api.list_files_in_dir(args["dirpath"])
+        files = backend.list_files_in_dir(args["dirpath"])
 
         return [
             TextContent(
@@ -169,11 +169,11 @@ class GetFileContentsToolHandler(ToolHandler):
 
         backend = get_backend()
 
-        content = api.get_file_contents(args["filepath"])
+        content = backend.get_file_contents(args["filepath"])
         
         # Extract and highlight frontmatter instructions
         try:
-            frontmatter = api.get_frontmatter(args["filepath"])
+            frontmatter = backend.get_frontmatter(args["filepath"])
             instruction_header = _format_frontmatter_instructions(frontmatter)
             
             if instruction_header:
@@ -229,7 +229,7 @@ class SearchToolHandler(ToolHandler):
         context_length = args.get("context_length", 100)
         
         backend = get_backend()
-        results = api.search(args["query"], context_length)
+        results = backend.search(args["query"], context_length)
         
         formatted_results = []
         for result in results:
@@ -287,8 +287,8 @@ class AppendContentToolHandler(ToolHandler):
        if "filepath" not in args or "content" not in args:
            raise RuntimeError("filepath and content arguments required")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.append_content(args.get("filepath", ""), args["content"])
+       backend = get_backend()
+       backend.append_content(args.get("filepath", ""), args["content"])
 
        return [
            TextContent(
@@ -340,8 +340,8 @@ class PatchContentToolHandler(ToolHandler):
        if not all(k in args for k in ["filepath", "operation", "target_type", "target", "content"]):
            raise RuntimeError("filepath, operation, target_type, target and content arguments required")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.patch_content(
+       backend = get_backend()
+       backend.patch_content(
            args.get("filepath", ""),
            args.get("operation", ""),
            args.get("target_type", ""),
@@ -385,8 +385,8 @@ class PutContentToolHandler(ToolHandler):
        if "filepath" not in args or "content" not in args:
            raise RuntimeError("filepath and content arguments required")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.put_content(args.get("filepath", ""), args["content"])
+       backend = get_backend()
+       backend.put_content(args.get("filepath", ""), args["content"])
 
        return [
            TextContent(
@@ -429,8 +429,8 @@ class DeleteFileToolHandler(ToolHandler):
        if not args.get("confirm", False):
            raise RuntimeError("confirm must be set to true to delete a file")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       api.delete_file(args["filepath"])
+       backend = get_backend()
+       backend.delete_file(args["filepath"])
 
        return [
            TextContent(
@@ -493,8 +493,8 @@ class ComplexSearchToolHandler(ToolHandler):
        if "query" not in args:
            raise RuntimeError("query argument missing in arguments")
 
-       api = obsidian.Obsidian(api_key=api_key, host=obsidian_host)
-       results = api.search_json(args.get("query", ""))
+       backend = get_backend()
+       results = backend.search_json(args.get("query", ""))
 
        return [
            TextContent(
@@ -538,11 +538,11 @@ class BatchGetFileContentsToolHandler(ToolHandler):
         all_contents = []
         for filepath in args["filepaths"]:
             try:
-                content = api.get_file_contents(filepath)
+                content = backend.get_file_contents(filepath)
                 
                 # Try to extract frontmatter instructions
                 try:
-                    frontmatter = api.get_frontmatter(filepath)
+                    frontmatter = backend.get_frontmatter(filepath)
                     instruction_header = _format_frontmatter_instructions(frontmatter)
                     
                     if instruction_header:
@@ -621,7 +621,7 @@ class PeriodicNotesToolHandler(ToolHandler):
             raise RuntimeError(f"Invalid type: {type}. Must be one of: {', '.join(valid_types)}")
 
         backend = get_backend()
-        content = api.get_periodic_note(period,type)
+        content = backend.get_periodic_note(period,type)
 
         return [
             TextContent(
@@ -681,7 +681,7 @@ class RecentPeriodicNotesToolHandler(ToolHandler):
             raise RuntimeError(f"Invalid include_content: {include_content}. Must be a boolean")
 
         backend = get_backend()
-        results = api.get_recent_periodic_notes(period, limit, include_content)
+        results = backend.get_recent_periodic_notes(period, limit, include_content)
 
         return [
             TextContent(
@@ -728,7 +728,7 @@ class RecentChangesToolHandler(ToolHandler):
             raise RuntimeError(f"Invalid days: {days}. Must be a positive integer")
 
         backend = get_backend()
-        results = api.get_recent_changes(limit, days)
+        results = backend.get_recent_changes(limit, days)
 
         return [
             TextContent(
@@ -780,7 +780,7 @@ class FrontmatterToolHandler(ToolHandler):
         backend = get_backend()
 
         if operation == "read":
-            frontmatter = api.get_frontmatter(filepath)
+            frontmatter = backend.get_frontmatter(filepath)
             return [
                 TextContent(
                     type="text",
@@ -790,7 +790,7 @@ class FrontmatterToolHandler(ToolHandler):
         elif operation == "update":
             if "updates" not in args:
                 raise RuntimeError("updates argument required for update operation")
-            api.update_frontmatter(filepath, args["updates"])
+            backend.update_frontmatter(filepath, args["updates"])
             return [
                 TextContent(
                     type="text",
@@ -800,7 +800,7 @@ class FrontmatterToolHandler(ToolHandler):
         elif operation == "delete":
             if "field" not in args:
                 raise RuntimeError("field argument required for delete operation")
-            api.delete_frontmatter_field(filepath, args["field"])
+            backend.delete_frontmatter_field(filepath, args["field"])
             return [
                 TextContent(
                     type="text",
@@ -854,7 +854,7 @@ class TagToolHandler(ToolHandler):
         backend = get_backend()
 
         if operation == "get_all":
-            tags = api.get_all_tags()
+            tags = backend.get_all_tags()
             return [
                 TextContent(
                     type="text",
@@ -864,7 +864,7 @@ class TagToolHandler(ToolHandler):
         elif operation == "get_file_tags":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for get_file_tags operation")
-            tags = api.get_tags_from_file(args["filepath"])
+            tags = backend.get_tags_from_file(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -875,7 +875,7 @@ class TagToolHandler(ToolHandler):
             if "tags" not in args:
                 raise RuntimeError("tags argument required for find_by_tags operation")
             match_all = args.get("match_all", False)
-            files = api.find_files_by_tags(args["tags"], match_all)
+            files = backend.find_files_by_tags(args["tags"], match_all)
             return [
                 TextContent(
                     type="text",
@@ -928,7 +928,7 @@ class AttachmentManagementToolHandler(ToolHandler):
 
         if operation == "list":
             folder_path = args.get("folder_path", "attachments")
-            attachments = api.list_attachments(folder_path)
+            attachments = backend.list_attachments(folder_path)
             return [
                 TextContent(
                     type="text",
@@ -938,7 +938,7 @@ class AttachmentManagementToolHandler(ToolHandler):
         elif operation == "rename":
             if "filepath" not in args or "new_name" not in args:
                 raise RuntimeError("filepath and new_name arguments required for rename operation")
-            api.rename_attachment(args["filepath"], args["new_name"])
+            backend.rename_attachment(args["filepath"], args["new_name"])
             return [
                 TextContent(
                     type="text",
@@ -948,7 +948,7 @@ class AttachmentManagementToolHandler(ToolHandler):
         elif operation == "find_references":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for find_references operation")
-            references = api.find_attachment_references(args["filepath"])
+            references = backend.find_attachment_references(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -1002,7 +1002,7 @@ class LinkManagementToolHandler(ToolHandler):
         if operation == "get_links":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for get_links operation")
-            links = api.get_links_in_file(args["filepath"])
+            links = backend.get_links_in_file(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -1012,7 +1012,7 @@ class LinkManagementToolHandler(ToolHandler):
         elif operation == "get_backlinks":
             if "filepath" not in args:
                 raise RuntimeError("filepath argument required for get_backlinks operation")
-            backlinks = api.get_backlinks(args["filepath"])
+            backlinks = backend.get_backlinks(args["filepath"])
             return [
                 TextContent(
                     type="text",
@@ -1022,7 +1022,7 @@ class LinkManagementToolHandler(ToolHandler):
         elif operation == "update_links":
             if "old_path" not in args or "new_path" not in args:
                 raise RuntimeError("old_path and new_path arguments required for update_links operation")
-            count = api.update_links(args["old_path"], args["new_path"])
+            count = backend.update_links(args["old_path"], args["new_path"])
             return [
                 TextContent(
                     type="text",
@@ -1073,7 +1073,7 @@ class DateRangeToolHandler(ToolHandler):
     def run_tool(self, args: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
         backend = get_backend()
         
-        files = api.get_files_by_date_range(
+        files = backend.get_files_by_date_range(
             start_date=args.get("start_date"),
             end_date=args.get("end_date"),
             folder_path=args.get("folder_path", ""),
@@ -1125,7 +1125,7 @@ class ProgressSummaryToolHandler(ToolHandler):
 
         backend = get_backend()
         
-        progress = api.get_folder_progress(
+        progress = backend.get_folder_progress(
             folder_path=args["folder_path"],
             days_back=args.get("days_back", 3),
             include_content=args.get("include_content", False)
@@ -1175,7 +1175,7 @@ class FolderTemplateToolHandler(ToolHandler):
         if not base_path.startswith("Projects/"):
             base_path = f"Projects/{base_path}"
         
-        created = api.create_folder_structure(
+        created = backend.create_folder_structure(
             base_path=base_path,
             template=args.get("template", "research_project")
         )
